@@ -3,13 +3,14 @@ import express from 'express';
 import cors from 'cors';
 import { BlockchainService } from './services/blockchain';
 import { APIResponse, ArtworkRegistration } from './types/did.types';
+import https from 'https';
+import fs from 'fs';
 
 const app = express();
 const blockchainService = new BlockchainService();
 
 app.use(cors());
 app.use(express.json());
-
 // Health check - GET
 app.get('/health', (req, res) => {
     res.json({
@@ -57,6 +58,7 @@ app.get('/resolve', async (req, res) => {
         res.json({
             responseCode: 0,
             id: did,
+            standard: "Karen 1.0",
             blockchainData,
             ipfsMetadata,
             ipfsError
@@ -118,6 +120,7 @@ app.post('/register', async (req, res) => {
         console.log('Artwork registered:', result);
         const response: APIResponse<{ 
             did: string; 
+            standard: string;
             txHash: string; 
             cid: string;
             ipfsUrl: string;
@@ -126,6 +129,7 @@ app.post('/register', async (req, res) => {
             success: true,
             data: {
                 did: `DID:ART:HKUST:${result.did}`,
+                standard: "Karen 1.0",
                 txHash: result.txHash,
                 cid: cid,
                 ipfsUrl: `https://ipfs.io/ipfs/${cid}`,
@@ -219,8 +223,30 @@ async function uploadToIPFS(metadata: any): Promise<string> {
 }
 
 const PORT = parseInt(process.env.PORT || '9001', 10);
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ Server running on http://localhost:${PORT}`);
-    console.log(`✅ Also accessible on http://0.0.0.0:${PORT}`);
-    console.log(`📝 Try: curl http://localhost:${PORT}/health`);
-});
+const SSL_KEY_PATH = process.env.SSL_KEY_PATH || ' ';
+const SSL_CERT_PATH = process.env.SSL_CERT_PATH || ' ';
+
+try {
+    const privateKey = fs.readFileSync(SSL_KEY_PATH, 'utf8');
+    const certificate = fs.readFileSync(SSL_CERT_PATH, 'utf8');
+
+    const credentials = {
+        key: privateKey,
+        cert: certificate
+    };
+
+    const httpsServer = https.createServer(credentials, app);
+    httpsServer.listen(PORT, '0.0.0.0', () => {
+        console.log(`✅ HTTPS Server running on port ${PORT}`);
+        console.log(`📝 Try: curl https://localhost:${PORT}/health`);
+    });
+} catch (error) {
+    console.error('Failed to load SSL certificates:', error);
+    console.log('Falling back to HTTP...');
+    //Fallback to HTTP if cannot verify SSL
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`✅ Server running on http://localhost:${PORT}`);
+        console.log(`✅ Also accessible on http://0.0.0.0:${PORT}`);
+        console.log(`📝 Try: curl http://localhost:${PORT}/health`);
+    });
+}
