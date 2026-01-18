@@ -24,45 +24,48 @@ export class BlockchainService {
     }
 
     // Check your contract initialization
-async registerArtwork(cid: string): Promise<{did: string; txHash: string}> {
-    try {
-        
-        const tx = await this.contract.setRecord(cid);
-        console.log(`Transaction sent: ${tx.hash}`);
-        
-        const receipt = await tx.wait();
-        console.log(`Transaction confirmed in block: ${receipt.blockNumber}`);
-        
-        // Try with a simpler call first
-        const did = await this.contract.generateDID(cid);
-        console.log(`Artwork registered with DID: ${did}, Transaction Hash: ${receipt.transactionHash}`);
-        
-        return { did, txHash: receipt.transactionHash };
+    async registerArtwork(cid: string): Promise<{did: string; txHash: string}> {
+        try {
+            
+            const tx = await this.contract.setRecord(cid);
+            console.log(`Transaction sent: ${tx.hash}`);
+            
+            const receipt = await tx.wait();
+            console.log(`Transaction confirmed in block: ${receipt.blockNumber}`);
+            
+            // Try with a simpler call first
+            const did = await this.contract.generateDID(cid);
+            console.log(`Artwork registered with DID: ${did}, Transaction Hash: ${receipt.transactionHash}`);
+            
+            return { did, txHash: receipt.transactionHash };
+        }
+        catch(error: any) {
+            console.error('Full error details:', error);
+            console.error('Error code:', error.code);
+            console.error('Error message:', error.message);
+            console.error('Transaction data:', error.transaction);
+            
+            throw new Error(`Blockchain transaction failed: ${error.message}`);
+        }
     }
-    catch(error: any) {
-        console.error('Full error details:', error);
-        console.error('Error code:', error.code);
-        console.error('Error message:', error.message);
-        console.error('Transaction data:', error.transaction);
-        
-        throw new Error(`Blockchain transaction failed: ${error.message}`);
-    }
-}
 
     async resolveDID(did: string): Promise<DIDResolution>{
         try{
-            console.log(`Trying to get record: ${did}`);
-            const cid = await this.contract.getRecord(did);
-            console.log(`Record found: ${cid}`);
-            if(!cid || cid === ""){
+            const record = await this.contract.getFullRecord(did);
+            if(!record){
                 throw new Error("DID not found");
             }
-
+            const cid = record.cid;
+            const createdAt = record.created_at;
+            const updatedAt = record.updated_at;
+            const creator = record.creator;
             return{
                 did,
                 cid,
                 serviceEndpoint: `ipfs://${cid}`,
-                walletaddress: await this.wallet.getAddress(),
+                createdAt,
+                updatedAt,
+                walletaddress: creator,
                 resolvedAt: new Date().toISOString(),
             };
 

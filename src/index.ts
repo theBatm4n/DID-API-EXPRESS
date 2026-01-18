@@ -36,13 +36,13 @@ app.get('/resolve', async (req, res) => {
         if (parts.length < 4 || parts[0] !== 'did' || parts[1] !== 'art' || parts[2] != "hkust") {
             res.status(400).json({ 
                 success: false,
-                error: 'Invalid DID format. Expected: did:art:hkust:address' 
+                error: 'Invalid DID format. Expected: did:art:hkust:<hash>' 
             });
             return;
         }
 
-        const address = parts[3];
-        const blockchainData = await blockchainService.resolveDID(address);
+        const hash = parts[3];
+        const blockchainData = await blockchainService.resolveDID(hash);
         const cid = blockchainData.cid;
         
         let ipfsMetadata = null;
