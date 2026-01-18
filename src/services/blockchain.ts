@@ -23,21 +23,31 @@ export class BlockchainService {
         );
     }
 
-    async registerArtwork(cid: string): Promise<{did: string; txHash: string}> {
-        try{
-            // Call contract and wait for transaction
-            const tx = await this.contract.setRecord(cid);
-            const receipt = await tx.wait();
-            
-            // Get the returned value
-            const did = await this.contract.generateDID(cid);
-            console.log(`Artwork registered with DID: ${did}, Transaction Hash: ${receipt.transactionHash}`);
-            return { did, txHash: receipt.transactionHash };
-        }
-        catch(error){
-            throw new Error(`Blockchain transaction failed: ${error}`);
-        }
+    // Check your contract initialization
+async registerArtwork(cid: string): Promise<{did: string; txHash: string}> {
+    try {
+        
+        const tx = await this.contract.setRecord(cid);
+        console.log(`Transaction sent: ${tx.hash}`);
+        
+        const receipt = await tx.wait();
+        console.log(`Transaction confirmed in block: ${receipt.blockNumber}`);
+        
+        // Try with a simpler call first
+        const did = await this.contract.generateDID(cid);
+        console.log(`Artwork registered with DID: ${did}, Transaction Hash: ${receipt.transactionHash}`);
+        
+        return { did, txHash: receipt.transactionHash };
     }
+    catch(error: any) {
+        console.error('Full error details:', error);
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
+        console.error('Transaction data:', error.transaction);
+        
+        throw new Error(`Blockchain transaction failed: ${error.message}`);
+    }
+}
 
     async resolveDID(did: string): Promise<DIDResolution>{
         try{
@@ -52,6 +62,7 @@ export class BlockchainService {
                 did,
                 cid,
                 serviceEndpoint: `ipfs://${cid}`,
+                walletaddress: await this.wallet.getAddress(),
                 resolvedAt: new Date().toISOString(),
             };
 

@@ -33,10 +33,10 @@ app.get('/resolve', async (req, res) => {
         }
         
         const parts = did.split(':');
-        if (parts.length < 4 || parts[0] !== 'DID' || parts[1] !== 'ART' || parts[2] != "HKUST") {
+        if (parts.length < 4 || parts[0] !== 'did' || parts[1] !== 'art' || parts[2] != "hkust") {
             res.status(400).json({ 
                 success: false,
-                error: 'Invalid DID format. Expected: DID:ART:HKUST:address' 
+                error: 'Invalid DID format. Expected: did:art:hkust:address' 
             });
             return;
         }
@@ -58,7 +58,6 @@ app.get('/resolve', async (req, res) => {
         res.json({
             responseCode: 0,
             id: did,
-            standard: "Karen 1.0",
             blockchainData,
             ipfsMetadata,
             ipfsError
@@ -113,8 +112,16 @@ app.post('/register', async (req, res) => {
             return;
         }
         
-        const metadata = registration.metadata;
-        const cid = await uploadToIPFS(metadata);
+        const now = new Date().toISOString();
+        const metadata = registration.metadata as any;
+        const enhancedMetadata = {
+            ...metadata,
+            standard: "Karen 1.0",
+            created: now,
+            updated: now
+        }
+
+        const cid = await uploadToIPFS(enhancedMetadata);
         console.log('Metadata uploaded to IPFS with CID:', cid);
         const result = await blockchainService.registerArtwork(cid);
         console.log('Artwork registered:', result);
@@ -128,7 +135,7 @@ app.post('/register', async (req, res) => {
         }> = {
             success: true,
             data: {
-                did: `DID:ART:HKUST:${result.did}`,
+                did: `did:art:hkust:${result.did}`,
                 standard: "Karen 1.0",
                 txHash: result.txHash,
                 cid: cid,

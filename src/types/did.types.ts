@@ -8,6 +8,7 @@ export interface DIDResolution{
     did: string,
     cid: string,
     serviceEndpoint: string,
+    walletaddress?: string,
     resolvedAt: string,
 }
 
