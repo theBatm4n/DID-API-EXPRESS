@@ -23,54 +23,51 @@ export class BlockchainService {
         );
     }
 
-    // Check your contract initialization
     async registerArtwork(cid: string): Promise<{did: string; txHash: string}> {
         try {
-            
             const tx = await this.contract.setRecord(cid);
-            console.log(`Transaction sent: ${tx.hash}`);
-            
             const receipt = await tx.wait();
-            console.log(`Transaction confirmed in block: ${receipt.blockNumber}`);
             
-            // Try with a simpler call first
-            const did = await this.contract.generateDID(cid);
-            console.log(`Artwork registered with DID: ${did}, Transaction Hash: ${receipt.transactionHash}`);
+            const eventTopic = ethers.id("RecordSet(bytes32,string,address,uint256,uint256)");
+            const eventLog = receipt.logs.find((log : ethers.Log) => log.topics[0] === eventTopic);
+            let actualDid = "";
+            if (eventLog) {
+                actualDid = ethers.hexlify(eventLog.topics[1]);
+            }
             
-            return { did, txHash: receipt.transactionHash };
-        }
-        catch(error: any) {
-            console.error('Full error details:', error);
-            console.error('Error code:', error.code);
-            console.error('Error message:', error.message);
-            console.error('Transaction data:', error.transaction);
+            return { 
+                did: actualDid, 
+                txHash: receipt.hash 
+            };
             
+        } catch (error: any) {
+            console.error('Registration error:', error);
             throw new Error(`Blockchain transaction failed: ${error.message}`);
         }
     }
 
-    async resolveDID(did: string): Promise<DIDResolution>{
-        try{
-            const record = await this.contract.getFullRecord(did);
-            if(!record){
+    async resolveDID(didString: string): Promise<DIDResolution> {
+        try {
+            const didBytes32 = ethers.hexlify(ethers.toUtf8Bytes(didString));
+            
+            const [cid, createdAt, updatedAt, creator] = await this.contract.getRecord(didBytes32);
+            
+            if (!cid || cid === "" || cid === "0x") {
                 throw new Error("DID not found");
             }
-            const cid = record.cid;
-            const createdAt = record.created_at;
-            const updatedAt = record.updated_at;
-            const creator = record.creator;
-            return{
-                did,
+            
+            return {
+                did: didString,
                 cid,
                 serviceEndpoint: `ipfs://${cid}`,
-                createdAt,
-                updatedAt,
+                createdAt: Number(createdAt),
+                updatedAt: Number(updatedAt),
                 walletaddress: creator,
                 resolvedAt: new Date().toISOString(),
             };
 
-        } catch(error){
-            throw new Error(`Failed to resolve DID: ${error instanceof Error? error.message : "Unknown error"}`);
+        } catch (error) {
+            throw new Error(`Failed to resolve DID: ${error instanceof Error ? error.message : "Unknown error"}`);
         }
     }
 
