@@ -17,7 +17,7 @@ export class BlockchainService {
         this.provider = new ethers.JsonRpcProvider(process.env.BESU_RPC_URL);
         this.wallet = new ethers.Wallet(process.env.PRIVATE_KEY, this.provider);
         this.contract = new ethers.Contract(
-            process.env.CONTRACT_ADDRESS || " ", //contract address
+            process.env.CONTRACT_ADDRESS || " ", 
             ArtDIDRegistryABI.abi,
             this.wallet
         );
@@ -32,7 +32,7 @@ export class BlockchainService {
             const eventLog = receipt.logs.find((log : ethers.Log) => log.topics[0] === eventTopic);
             let actualDid = "";
             if (eventLog) {
-                actualDid = ethers.hexlify(eventLog.topics[1]);
+                actualDid = ethers.hexlify(eventLog.topics[1]); 
             }
             
             return { 
@@ -46,18 +46,16 @@ export class BlockchainService {
         }
     }
 
-    async resolveDID(didString: string): Promise<DIDResolution> {
+    async resolveDID(did: string): Promise<DIDResolution> {
         try {
-            const didBytes32 = ethers.hexlify(ethers.toUtf8Bytes(didString));
-            
-            const [cid, createdAt, updatedAt, creator] = await this.contract.getRecord(didBytes32);
-            
+            const [cid, createdAt, updatedAt, creator] = await this.contract.getRecord(did);
+            console.log("DID resolved. CID:", cid);
             if (!cid || cid === "" || cid === "0x") {
                 throw new Error("DID not found");
             }
             
             return {
-                did: didString,
+                did: did,
                 cid,
                 serviceEndpoint: `ipfs://${cid}`,
                 createdAt: Number(createdAt),
