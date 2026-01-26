@@ -321,46 +321,58 @@ app.post('/transfer', async (req, res) => {
 
 
 async function fetchFromIPFS(cid: string): Promise<any> {
-    try {
-        // public IPFS gateway
-        const gatewayUrl = `https://ipfs.io/ipfs/${cid}`;
-        
-        const response = await fetch(gatewayUrl, {
-            headers: {
-                'Accept': 'application/json'
+    // FIRST: Try your own IPFS node (most reliable)
+    if (process.env.IPFS_API_URL) {
+        try {
+            console.log(`Fetching from local IPFS node: ${cid}`);
+            const response = await fetch(`${process.env.IPFS_API_URL}/api/v0/cat?arg=${cid}`, {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json'
+                },
+                signal: AbortSignal.timeout(5000) // 5 second timeout
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log(`Successfully fetched from local IPFS node: ${cid}`);
+                return data;
             }
-        });
-        if (!response.ok) {
-            throw new Error(`IPFS fetch failed: ${response.status} ${response.statusText}`);
+        } catch (error) {
+            console.log(`Local IPFS node fetch failed for ${cid}:`, error);
+            // Continue to fallback gateways
         }
-        const data = await response.json();
-        return data;
-        
-    } catch (error) {
-        console.error(`Failed to fetch from IPFS CID ${cid}:`, error);
-        
-        // Fallback gateways
-        const fallbackGateways = [
-            `https://cloudflare-ipfs.com/ipfs/${cid}`,
-            `https://gateway.pinata.cloud/ipfs/${cid}`,
-            `https://dweb.link/ipfs/${cid}`
-        ];
-        
-        for (const gateway of fallbackGateways) {
-            try {
-                const response = await fetch(gateway, {
-                    headers: { 'Accept': 'application/json' }
-                });
-                if (response.ok) {
-                    return await response.json();
-                }
-            } catch (e) {
-                continue;
-            }
-        }
-        
-        throw new Error(`All IPFS gateways failed for CID: ${cid}`);
     }
+    
+    // fallback to public gateways (only if your node fails)
+    console.log(`Trying public gateways for: ${cid}`);
+    const gateways = [
+        `https://cloudflare-ipfs.com/ipfs/${cid}`,  // Most reliable public gateway
+        `https://dweb.link/ipfs/${cid}`,
+        `https://gateway.pinata.cloud/ipfs/${cid}`,
+        `https://ipfs.io/ipfs/${cid}`  // Least reliable, last resort
+    ];
+    
+    for (const gatewayUrl of gateways) {
+        try {
+            console.log(`Trying gateway: ${gatewayUrl}`);
+            const response = await fetch(gatewayUrl, {
+                headers: { 'Accept': 'application/json' },
+                signal: AbortSignal.timeout(3000)
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log(`Successfully fetched from public gateway: ${gatewayUrl}`);
+                return data;
+            }
+        } catch (error) {
+            console.log(`Gateway ${gatewayUrl} failed:`, error);
+            continue;
+        }
+    }
+    
+    throw new Error(`All IPFS sources failed for CID: ${cid}`);
 }
 
 async function uploadToIPFS(metadata: any): Promise<string> {
