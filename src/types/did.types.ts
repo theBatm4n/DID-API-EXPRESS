@@ -12,6 +12,7 @@ export interface DIDResolution{
     updatedAt?: number,
     walletaddress?: string,
     resolvedAt: string,
+    owners?: string[],
 }
 
 export interface APIResponse<T>{
@@ -24,4 +25,14 @@ export interface ContractConfig {
     contractAddress: string,
     besuRpcUrl: string,
     privateKey: string,
+}
+
+export interface OwnershipTransfer {
+    did: string;          
+    newOwner: string;    
+}
+
+export interface ArtworkUpdate {
+    did: string;           
+    metadata: any;         
 }

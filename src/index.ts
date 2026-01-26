@@ -2,9 +2,10 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { BlockchainService } from './services/blockchain';
-import { APIResponse, ArtworkRegistration } from './types/did.types';
+import { APIResponse, ArtworkRegistration, OwnershipTransfer, ArtworkUpdate } from './types/did.types';
 import https from 'https';
 import fs from 'fs';
+// import fetch from 'node-fetch';
 
 const app = express();
 const blockchainService = new BlockchainService();
@@ -155,6 +156,170 @@ app.post('/register', async (req, res) => {
 });
 
 
+// Update artwork metadata - PUT
+app.put('/update', async (req, res) => {
+    try {
+        const update: ArtworkUpdate = req.body;
+        if (!update.did || !update.metadata) {
+            res.status(400).json({ 
+                success: false,
+                error: 'DID and metadata are required' 
+            });
+            return;
+        }
+        
+        // Parse DID to get the hash part
+        const parts = update.did.split(':');
+        if (parts.length < 4 || parts[0] !== 'did' || parts[1] !== 'art' || parts[2] !== "hkust") {
+            res.status(400).json({ 
+                success: false,
+                error: 'Invalid DID format. Expected: did:art:hkust:<hash>' 
+            });
+            return;
+        }
+        
+        const didHash = parts[3];
+        
+        // Get current record to know the version
+        const fullRecord = await blockchainService.getFullRecord(didHash);
+        const currentVersion = fullRecord.cidCount;
+        
+        // Prepare new metadata
+        const now = new Date().toISOString();
+        const metadata = update.metadata as any;
+        const enhancedMetadata = {
+            ...metadata,
+            standard: "Karen 2.0",
+            created: fullRecord.createdAt ? new Date(fullRecord.createdAt * 1000).toISOString() : now,
+            updated: now,
+            version: currentVersion + 1,
+            previousVersion: currentVersion
+        };
+
+        // Upload new metadata to IPFS
+        const newCid = await uploadToIPFS(enhancedMetadata);
+        console.log('Updated metadata uploaded to IPFS with CID:', newCid);
+        
+        // Update blockchain record
+        const result = await blockchainService.updateArtwork(didHash, newCid);
+        console.log('Artwork updated:', result);
+        
+        const response: APIResponse<{ 
+            did: string;
+            txHash: string; 
+            newCid: string;
+            previousCid: string;
+            ipfsUrl: string;
+            version: number;
+            metadata: any;
+        }> = {
+            success: true,
+            data: {
+                did: update.did,
+                txHash: result.txHash,
+                newCid: newCid,
+                previousCid: fullRecord.cids[fullRecord.cids.length - 1],
+                ipfsUrl: `https://ipfs.io/ipfs/${newCid}`,
+                version: currentVersion + 1,
+                metadata: metadata
+            }
+        };
+        res.json(response);
+    } catch (error) {
+        console.error('Artwork update error:', error);
+        const response: APIResponse<null> = {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+        };
+        res.status(500).json(response);
+    }
+});
+
+// Transfer ownership - POST
+app.post('/transfer', async (req, res) => {
+    try {
+        const transfer: OwnershipTransfer = req.body;
+        if (!transfer.did || !transfer.newOwner) {
+            res.status(400).json({ 
+                success: false,
+                error: 'DID and newOwner are required' 
+            });
+            return;
+        }
+        
+        // Parse DID to get the hash part
+        const parts = transfer.did.split(':');
+        if (parts.length < 4 || parts[0] !== 'did' || parts[1] !== 'art' || parts[2] !== "hkust") {
+            res.status(400).json({ 
+                success: false,
+                error: 'Invalid DID format. Expected: did:art:hkust:<hash>' 
+            });
+            return;
+        }
+        
+        const didHash = parts[3];
+        
+        // Validate Ethereum address format
+        if (!transfer.newOwner.match(/^0x[a-fA-F0-9]{40}$/)) {
+            res.status(400).json({ 
+                success: false,
+                error: 'Invalid Ethereum address format' 
+            });
+            return;
+        }
+        
+        // Transfer ownership
+        const result = await blockchainService.transferOwnership(didHash, transfer.newOwner);
+        console.log('Ownership transferred:', result);
+        
+        // Get updated record
+        const fullRecord = await blockchainService.getFullRecord(didHash);
+        const currentOwner = await blockchainService.getCurrentOwner(didHash);
+        
+        const response: APIResponse<{ 
+            did: string;
+            txHash: string;
+            previousOwner: string;
+            newOwner: string;
+            currentOwner: string;
+            totalOwners: number;
+        }> = {
+            success: true,
+            data: {
+                did: transfer.did,
+                txHash: result.txHash,
+                previousOwner: fullRecord.owners[fullRecord.owners.length - 2] || "N/A",
+                newOwner: transfer.newOwner,
+                currentOwner: currentOwner,
+                totalOwners: fullRecord.ownerCount
+            }
+        };
+        res.json(response);
+    } catch (error) {
+        console.error('Ownership transfer error:', error);
+        const response: APIResponse<null> = {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+        };
+        
+        // Check for specific errors
+        if (error instanceof Error) {
+            if (error.message.includes('Only current owner can transfer')) {
+                res.status(403).json(response);
+                return;
+            }
+            if (error.message.includes('Address is already an owner')) {
+                res.status(400).json(response);
+                return;
+            }
+        }
+        
+        res.status(500).json(response);
+    }
+});
+
+
+
 async function fetchFromIPFS(cid: string): Promise<any> {
     try {
         // public IPFS gateway
@@ -197,7 +362,6 @@ async function fetchFromIPFS(cid: string): Promise<any> {
         throw new Error(`All IPFS gateways failed for CID: ${cid}`);
     }
 }
-
 
 async function uploadToIPFS(metadata: any): Promise<string> {
   try {
