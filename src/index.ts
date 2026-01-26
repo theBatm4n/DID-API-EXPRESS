@@ -118,8 +118,6 @@ app.post('/register', async (req, res) => {
         const enhancedMetadata = {
             ...metadata,
             standard: "Karen 1.0",
-            created: now,
-            updated: now
         }
 
         const cid = await uploadToIPFS(enhancedMetadata);

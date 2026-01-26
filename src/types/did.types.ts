@@ -13,6 +13,7 @@ export interface DIDResolution{
     walletaddress?: string,
     resolvedAt: string,
     owners?: string[],
+    cidHistory?: string[]
 }
 
 export interface APIResponse<T>{

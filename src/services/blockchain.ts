@@ -45,34 +45,37 @@ export class BlockchainService {
         }
     }
 
-    async resolveDID(did: string): Promise<DIDResolution> {
-        try {
-            // Updated to match new return signature: (latestCid, created_at, updated_at, owners)
-            const [latestCid, createdAt, updatedAt, owners] = await this.contract.getLatestRecord(did);
-            
-            console.log("DID resolved. CID:", latestCid);
-            if (!latestCid || latestCid === "" || latestCid === "0x") {
-                throw new Error("DID not found");
-            }
-            
-            // Get current owner (last in array)
-            const currentOwner = owners.length > 0 ? owners[owners.length - 1] : "";
-            
-            return {
-                did: did,
-                cid: latestCid,
-                serviceEndpoint: `ipfs://${latestCid}`,
-                createdAt: Number(createdAt),
-                updatedAt: Number(updatedAt),
-                walletaddress: currentOwner,
-                resolvedAt: new Date().toISOString(),
-                owners: owners, // Return all owners if your interface supports it
-            };
-
-        } catch (error) {
-            throw new Error(`Failed to resolve DID: ${error instanceof Error ? error.message : "Unknown error"}`);
+async resolveDID(did: string): Promise<DIDResolution> {
+    try {
+        // Get FULL record instead of just latest
+        const fullRecord = await this.contract.getFullRecord(did);
+        
+        console.log("Full record:", fullRecord);
+        
+        if (!fullRecord.cid || fullRecord.cid.length === 0) {
+            throw new Error("DID not found");
         }
+        
+        const latestCid = fullRecord.cid[fullRecord.cid.length - 1];
+        const currentOwner = fullRecord.owner.length > 0 
+            ? fullRecord.owner[fullRecord.owner.length - 1] 
+            : "";
+        
+        return {
+            did: did,
+            cid: latestCid,
+            serviceEndpoint: `ipfs://${latestCid}`,
+            createdAt: Number(fullRecord.created_at),
+            updatedAt: Number(fullRecord.updated_at),
+            walletaddress: currentOwner,
+            resolvedAt: new Date().toISOString(),
+            owners: fullRecord.owner,
+            cidHistory: fullRecord.cid  // Add this!
+        };
+    } catch (error) {
+        throw new Error(`Failed to resolve DID: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
+}
 
     async checkDIDExists(did: string): Promise<boolean> {
         try {
