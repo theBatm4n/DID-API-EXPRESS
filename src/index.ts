@@ -112,8 +112,6 @@ app.post('/register', async (req, res) => {
             });
             return;
         }
-        
-        const now = new Date().toISOString();
         const metadata = registration.metadata as any;
         const enhancedMetadata = {
             ...metadata,
@@ -121,9 +119,7 @@ app.post('/register', async (req, res) => {
         }
 
         const cid = await uploadToIPFS(enhancedMetadata);
-        console.log('Metadata uploaded to IPFS with CID:', cid);
         const result = await blockchainService.registerArtwork(cid);
-        console.log('Artwork registered:', result);
         const response: APIResponse<{ 
             did: string; 
             standard: string;
@@ -338,14 +334,12 @@ async function fetchFromIPFS(cid: string): Promise<any> {
             }
         } catch (error) {
             console.log(`Local IPFS node fetch failed for ${cid}:`, error);
-            // Continue to fallback gateways
         }
     }
     
-    // fallback to public gateways (only if your node fails)
     console.log(`Trying public gateways for: ${cid}`);
     const gateways = [
-        `https://cloudflare-ipfs.com/ipfs/${cid}`,  // Most reliable public gateway
+        `https://cloudflare-ipfs.com/ipfs/${cid}`,  // Most reliable
         `https://dweb.link/ipfs/${cid}`,
         `https://gateway.pinata.cloud/ipfs/${cid}`,
         `https://ipfs.io/ipfs/${cid}`  // Least reliable, last resort
@@ -369,7 +363,6 @@ async function fetchFromIPFS(cid: string): Promise<any> {
             continue;
         }
     }
-    
     throw new Error(`All IPFS sources failed for CID: ${cid}`);
 }
 

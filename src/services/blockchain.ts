@@ -21,29 +21,31 @@ export class BlockchainService {
         );
     }
 
-    async registerArtwork(cid: string): Promise<{did: string; txHash: string}> {
-        try {
-            const tx = await this.contract.setRecord(cid);
-            const receipt = await tx.wait();
-            
-            const eventTopic = ethers.id("RecordSet(bytes32,string,address,uint256)");
-            const eventLog = receipt.logs.find((log: ethers.Log) => log.topics[0] === eventTopic);
-            
-            let actualDid = "";
-            if (eventLog) {
-                actualDid = ethers.hexlify(eventLog.topics[1]); 
-            }
-            
-            return { 
-                did: actualDid, 
-                txHash: receipt.hash 
-            };
-            
-        } catch (error: any) {
-            console.error('Registration error:', error);
-            throw new Error(`Blockchain transaction failed: ${error.message}`);
-        }
+async registerArtwork(cid: string): Promise<{did: string; txHash: string}> {
+    try {
+        // Send transaction
+        const tx = await this.contract.setRecord(cid);
+        console.log("Transaction sent:", tx.hash);
+        
+        // Wait for receipt
+        const receipt = await tx.wait();
+        console.log("Transaction confirmed in block:", receipt.blockNumber);
+        
+        const setRecordEvent = this.contract.interface.parseLog(receipt.logs[0]);
+        
+        let did = setRecordEvent?.args.did;
+        console.log("DID from event:", did);
+        
+        return { 
+            did: did, 
+            txHash: receipt.hash 
+        };
+        
+    } catch (error: any) {
+        console.error('Registration error:', error);
+        throw new Error(`Blockchain transaction failed: ${error.message}`);
     }
+}
 
 async resolveDID(did: string): Promise<DIDResolution> {
     try {
