@@ -2,23 +2,12 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
+RUN npm ci
 
-# Install dependencies
-RUN npm ci 
+COPY . .
+RUN npm run build
 
-# Copy source code
-COPY src ./src
-COPY contracts ./contracts
-COPY tsconfig.json ./
+EXPOSE 3000
 
-# Build TypeScript
-RUN npm install -g typescript
-RUN tsc
-
-# Expose port 9000 (required by Alibaba FC)
-EXPOSE 9000
-
-# Start the app
 CMD ["node", "dist/index.js"]

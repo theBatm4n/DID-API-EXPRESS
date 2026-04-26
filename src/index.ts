@@ -5,7 +5,24 @@ import { BlockchainService } from './services/blockchain';
 import { APIResponse, ArtworkRegistration, OwnershipTransfer, ArtworkUpdate } from './types/did.types';
 import https from 'https';
 import fs from 'fs';
-// import fetch from 'node-fetch';
+import multer from 'multer';
+
+// multer for memory storage (buffers)
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 100 * 1024 * 1024, // 100MB per file (adjust)
+        files: 10                    // Max 10 files per request
+    },
+    fileFilter: (req, file, cb) => {
+        const allowedMimes = ['image/jpeg', 'image/png', 'image/tiff', 'application/pdf'];
+        if (allowedMimes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Invalid file type. Only JPEG, PNG, TIFF, PDF allowed.'));
+        }
+    }
+});
 
 const app = express();
 const blockchainService = new BlockchainService();
@@ -229,6 +246,116 @@ app.put('/update', async (req, res) => {
     }
 });
 
+app.post('/add-scanned-document', upload.array('documents', 10), async (req, res) => {
+    try {
+        const { did, ownerAddress } = req.body;
+        const files = req.files as Express.Multer.File[];
+
+        if (!did || !ownerAddress) {
+            return res.status(400).json({ success: false, error: 'did and ownerAddress are required' });
+        }
+        if (!files || files.length === 0) {
+            return res.status(400).json({ success: false, error: 'At least one document file is required' });
+        }
+
+        // 1. Validate DID format
+        const parts = did.split(':');
+        if (parts.length !== 4 || parts[0] !== 'did' || parts[1] !== 'art' || parts[2] !== 'hkust') {
+            return res.status(400).json({ success: false, error: 'Invalid DID format' });
+        }
+        const didHash = parts[3];
+
+        // 2. Verify ownership
+        const isOwner = await blockchainService.isOwner(didHash, ownerAddress);
+        if (!isOwner) {
+            return res.status(403).json({ success: false, error: 'Only the current owner can add documents' });
+        }
+
+        // 3. Get current artwork record from blockchain
+        const fullRecord = await blockchainService.getFullRecord(didHash);
+        const currentBundleCid = fullRecord.cids[fullRecord.cids.length - 1];
+
+        // 4. Fetch existing bundle from IPFS
+        let existingBundle: any = {};
+        try {
+            existingBundle = await fetchFromIPFS(currentBundleCid);
+        } catch (err) {
+            // If no bundle yet, create empty structure
+            existingBundle = {
+                schema: "did-art-bundle-v2",
+                version: "1.0.0",
+                documents: [],
+                metadata: {}
+            };
+        }
+
+        // 5. Process each uploaded file: upload to IPFS (as a single buffer for now)
+        //    But we store in a structure that supports future chunking and encryption.
+        const addedDocs = [];
+        for (const file of files) {
+            // For now, upload entire file as a single IPFS object.
+            // Later you can replace this with chunked upload.
+            const fileCid = await uploadBufferToIPFS(file.buffer);
+            
+            const docEntry = {
+                cid: fileCid,
+                name: file.originalname,
+                mimeType: file.mimetype,
+                size: file.size,            // Points to the raw file in IPFS
+                addedAt: new Date().toISOString(),
+                addedBy: ownerAddress,
+                encrypted: false,             // Placeholder for future
+                // For chunked future:
+                chunked: false,
+                totalChunks: 1,
+                chunks: [{ index: 0, cid: fileCid }]
+            };
+            addedDocs.push(docEntry);
+        }
+
+        // 6. Merge into existing bundle
+        const updatedBundle = {
+            ...existingBundle,
+            documents: [...(existingBundle.documents || []), ...addedDocs],
+            lastUpdated: new Date().toISOString(),
+            updateHistory: [
+                ...(existingBundle.updateHistory || []),
+                {
+                    action: 'ADD_DOCUMENTS',
+                    timestamp: new Date().toISOString(),
+                    documentsAdded: addedDocs.map(d => d.cid),
+                    by: ownerAddress
+                }
+            ]
+        };
+
+        // 7. Upload updated bundle to IPFS (new CID)
+        const newBundleCid = await uploadToIPFS(updatedBundle);
+        console.log('New bundle CID:', newBundleCid);
+
+        // 8. Update blockchain record (creates new version)
+        const txResult = await blockchainService.updateArtwork(didHash, newBundleCid);
+        console.log('Blockchain updated with new bundle CID:', txResult);
+        // 9. Return success
+        res.json({
+            success: true,
+            data: {
+                did: did,
+                txHash: txResult.txHash,
+                oldBundleCid: currentBundleCid,
+                newBundleCid: newBundleCid,
+                documentsAdded: addedDocs.map(d => ({ name: d.name, cid: d.cid })),
+                totalDocuments: updatedBundle.documents.length,
+                version: fullRecord.cidCount + 1
+            }
+        });
+
+    } catch (error) {
+        console.error('Error adding scanned document:', error);
+        res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+});
+
 // Transfer ownership - POST
 app.post('/transfer', async (req, res) => {
     try {
@@ -312,10 +439,8 @@ app.post('/transfer', async (req, res) => {
     }
 });
 
-
-
 async function fetchFromIPFS(cid: string): Promise<any> {
-    // FIRST: Try your own IPFS node (most reliable)
+    // First Try our own IPFS node (most reliable)
     if (process.env.IPFS_API_URL) {
         try {
             console.log(`Fetching from local IPFS node: ${cid}`);
@@ -396,6 +521,21 @@ async function uploadToIPFS(metadata: any): Promise<string> {
   }
 }
 
+async function uploadBufferToIPFS(buffer: Buffer) : Promise<string> {
+    const formData = new FormData();
+    const blob = new Blob([buffer]);
+    formData.append('file', blob);
+    const response = await fetch(`${process.env.IPFS_API_URL}/api/v0/add`, {
+        method: `POST`,
+        body: formData
+    });
+    if(!response.ok){
+        throw new Error(`IPFS upload failed: ${response.statusText}`);
+    }
+    const result = await response.json() as { Hash: string};
+    return result.Hash;
+}
+
 const PORT = parseInt(process.env.PORT || '9001', 10);
 const SSL_KEY_PATH = process.env.SSL_KEY_PATH || ' ';
 const SSL_CERT_PATH = process.env.SSL_CERT_PATH || ' ';
@@ -411,16 +551,16 @@ try {
 
     const httpsServer = https.createServer(credentials, app);
     httpsServer.listen(PORT, '0.0.0.0', () => {
-        console.log(`✅ HTTPS Server running on port ${PORT}`);
-        console.log(`📝 Try: curl https://localhost:${PORT}/health`);
+        console.log(`HTTPS Server running on port ${PORT}`);
+        console.log(`Try: curl https://localhost:${PORT}/health`);
     });
 } catch (error) {
     console.error('Failed to load SSL certificates:', error);
     console.log('Falling back to HTTP...');
-    //Fallback to HTTP if cannot verify SSL
+    //Fallback to HTTP if cannot verify SSL (for local testing)
     app.listen(PORT, '0.0.0.0', () => {
-        console.log(`✅ Server running on http://localhost:${PORT}`);
-        console.log(`✅ Also accessible on http://0.0.0.0:${PORT}`);
-        console.log(`📝 Try: curl http://localhost:${PORT}/health`);
+        console.log(`Server running on http://localhost:${PORT}`);
+        console.log(`Also accessible on http://0.0.0.0:${PORT}`);
+        console.log(`Try: curl http://localhost:${PORT}/health`);
     });
 }

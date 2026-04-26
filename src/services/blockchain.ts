@@ -21,63 +21,63 @@ export class BlockchainService {
         );
     }
 
-async registerArtwork(cid: string): Promise<{did: string; txHash: string}> {
-    try {
-        // Send transaction
-        const tx = await this.contract.setRecord(cid);
-        console.log("Transaction sent:", tx.hash);
-        
-        // Wait for receipt
-        const receipt = await tx.wait();
-        console.log("Transaction confirmed in block:", receipt.blockNumber);
-        
-        const setRecordEvent = this.contract.interface.parseLog(receipt.logs[0]);
-        
-        let did = setRecordEvent?.args.did;
-        console.log("DID from event:", did);
-        
-        return { 
-            did: did, 
-            txHash: receipt.hash 
-        };
-        
-    } catch (error: any) {
-        console.error('Registration error:', error);
-        throw new Error(`Blockchain transaction failed: ${error.message}`);
-    }
-}
-
-async resolveDID(did: string): Promise<DIDResolution> {
-    try {
-        // Get FULL record instead of just latest
-        const fullRecord = await this.contract.getFullRecord(did);
-        
-        console.log("Full record:", fullRecord);
-        
-        if (!fullRecord.cid || fullRecord.cid.length === 0) {
-            throw new Error("DID not found");
+    async registerArtwork(cid: string): Promise<{did: string; txHash: string}> {
+        try {
+            // Send transaction
+            const tx = await this.contract.setRecord(cid);
+            console.log("Transaction sent:", tx.hash);
+            
+            // Wait for receipt
+            const receipt = await tx.wait();
+            console.log("Transaction confirmed in block:", receipt.blockNumber);
+            
+            const setRecordEvent = this.contract.interface.parseLog(receipt.logs[0]);
+            
+            let did = setRecordEvent?.args.did;
+            console.log("DID from event:", did);
+            
+            return { 
+                did: did, 
+                txHash: receipt.hash 
+            };
+            
+        } catch (error: any) {
+            console.error('Registration error:', error);
+            throw new Error(`Blockchain transaction failed: ${error.message}`);
         }
-        
-        const latestCid = fullRecord.cid[fullRecord.cid.length - 1];
-        const currentOwner = fullRecord.owner.length > 0 
-            ? fullRecord.owner[fullRecord.owner.length - 1] 
-            : "";
-        
-        return {
-            did: did,
-            cid: latestCid,
-            serviceEndpoint: `ipfs://${latestCid}`,
-            createdAt: Number(fullRecord.created_at),
-            updatedAt: Number(fullRecord.updated_at),
-            walletaddress: currentOwner,
-            resolvedAt: new Date().toISOString(),
-            owners: fullRecord.owner,
-            cidHistory: fullRecord.cid  // Add this!
-        };
-    } catch (error) {
-        throw new Error(`Failed to resolve DID: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
-}
+
+    async resolveDID(did: string): Promise<DIDResolution> {
+        try {
+            // Get FULL record instead of just latest
+            const fullRecord = await this.contract.getFullRecord(did);
+            
+            console.log("Full record:", fullRecord);
+            
+            if (!fullRecord.cid || fullRecord.cid.length === 0) {
+                throw new Error("DID not found");
+            }
+            
+            const latestCid = fullRecord.cid[fullRecord.cid.length - 1];
+            const currentOwner = fullRecord.owner.length > 0 
+                ? fullRecord.owner[fullRecord.owner.length - 1] 
+                : "";
+            
+            return {
+                did: did,
+                cid: latestCid,
+                serviceEndpoint: `ipfs://${latestCid}`,
+                createdAt: Number(fullRecord.created_at),
+                updatedAt: Number(fullRecord.updated_at),
+                walletaddress: currentOwner,
+                resolvedAt: new Date().toISOString(),
+                owners: fullRecord.owner,
+                cidHistory: fullRecord.cid  // Add this!
+            };
+        } catch (error) {
+            throw new Error(`Failed to resolve DID: ${error instanceof Error ? error.message : "Unknown error"}`);
+        }
+    }
 
     async checkDIDExists(did: string): Promise<boolean> {
         try {
@@ -86,8 +86,6 @@ async resolveDID(did: string): Promise<DIDResolution> {
             throw new Error(`Failed to check DID: ${error instanceof Error? error.message : "Unknown error"}`);
         }
     }
-
-    // NEW FUNCTIONS FOR UPDATED CONTRACT
 
     async updateArtwork(did: string, newCid: string): Promise<{txHash: string}> {
         try {
